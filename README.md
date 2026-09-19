@@ -13,6 +13,22 @@
 
 ---
 
+## 预览
+
+**Balanced（8 步）—— 推荐日常档**，五个时间点：推近 → 手部特写 → 切镜 → 侧脸
+
+![H3_Balanced 预览](preview/H3_Balanced.png)
+
+<sub>
+Quality（20 步）：[预览图](preview/H3_Quality.png) ·
+Fast（4 步）：[预览图](preview/H3_Fast.png)
+</sub>
+
+> 示例底图是作者的私人图，**公开发布的工作流里 `LoadImage` 已改成 ComfyUI 自带的
+> `example.png`** —— 记得换成你自己的图。
+
+---
+
 ## 1. 你需要先准备这些模型
 
 放到 ComfyUI 对应的 `models/` 子目录下：
@@ -164,7 +180,7 @@ crf 越小画质越高、文件越大。**12 ≈ 视觉无损**；想让文件�
 
 每条参数选择背后都有实测，完整证据、脚本和原始数据在：
 
-**https://github.com/FlowForgotLab/h3-8gb-traps**
+**https://github.com/FlowForgeLabAi/-h3-8gb-traps**
 
 包含：kitchen vs sage vs SDPA 的注意力对照、LoRA 80.3% 应用率的逐 key 比对、
 输出节点探针（不加载模型，秒级出结果）、14 次运行的 33 字段 CSV。
