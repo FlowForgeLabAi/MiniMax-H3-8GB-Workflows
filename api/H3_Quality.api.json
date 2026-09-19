@@ -1,0 +1,266 @@
+{
+ "1": {
+  "class_type": "UNETLoader",
+  "inputs": {
+   "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+   "weight_dtype": "default"
+  }
+ },
+ "2": {
+  "class_type": "ModelPatchTorchSettings",
+  "inputs": {
+   "enable_fp16_accumulation": true,
+   "model": [
+    "1",
+    0
+   ]
+  }
+ },
+ "3": {
+  "class_type": "MiniMaxH3SigmaShift",
+  "inputs": {
+   "shift_video": 12.0,
+   "shift_audio": 3.0,
+   "model": [
+    "2",
+    0
+   ]
+  }
+ },
+ "4": {
+  "class_type": "MiniMaxLowVRAMAttention",
+  "inputs": {
+   "head_chunks": 10,
+   "model": [
+    "3",
+    0
+   ]
+  }
+ },
+ "5": {
+  "class_type": "MiniMaxChunkFeedForward",
+  "inputs": {
+   "chunks": 4,
+   "seq_threshold": 4096,
+   "model": [
+    "4",
+    0
+   ]
+  }
+ },
+ "6": {
+  "class_type": "ModelAttentionBackend",
+  "inputs": {
+   "attention": "comfy kitchen attention",
+   "model": [
+    "5",
+    0
+   ]
+  }
+ },
+ "8": {
+  "class_type": "BasicGuider",
+  "inputs": {
+   "model": [
+    "6",
+    0
+   ],
+   "conditioning": [
+    "16",
+    0
+   ]
+  }
+ },
+ "10": {
+  "class_type": "CLIPLoader",
+  "inputs": {
+   "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+   "type": "minimax",
+   "device": "default"
+  }
+ },
+ "11": {
+  "class_type": "PrimitiveStringMultiline",
+  "inputs": {
+   "value": "For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.\n\nintegrated_multimodal_description: [Shot 1] 二次元插画人物与实景摄影背景合成的风格。画面中的少女保持 <Picture 1> 里的外貌、深褐色长发、米灰色粗针织毛衣、站姿与所处位置不变，站在混凝土观景平台的金属栏杆旁，远处是层叠的雾中山脊，天空从暖橙渐变到浅蓝。她的长发被风持续吹向一侧，遮住大部分面部，只露出下颌与一小片脸颊，唇线紧闭，表情平静。The camera pushes in with small amplitude at slow speed toward her hand clutching the front of her sweater in the lower part of the frame, and comes to rest at a medium shot. 镜头停住的瞬间，她在毛衣上收紧了一下手指，粗针织的纹理被拉动。 [Shot 2] At 00:06.000, the camera cuts to a medium close-up of her shoulder and neck from behind her side: 她微微转头望向远处层叠的山脊线，长发被风掀起又落下，头发始终保持遮住面部，最后停在凝视远方的静止姿态。\n\noverall_soundscape: 掠过山脊的风声持续不断，音量缓慢起伏。毛衣粗针织布料在风中摩擦发出细微声响。她的呼吸平缓而轻微。\n\nnon_diegetic_music: 一枚钢琴单音以极慢的速度衰减，随后加入持续的低音弦乐，音量逐渐减弱至消失。"
+  }
+ },
+ "12": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "example.png"
+  }
+ },
+ "13": {
+  "class_type": "ResolutionSelector",
+  "inputs": {
+   "aspect_ratio": "3:4 (Portrait Standard)",
+   "megapixels": 0.75,
+   "multiple": 32
+  }
+ },
+ "14": {
+  "class_type": "PrimitiveFloat",
+  "inputs": {
+   "value": 10
+  }
+ },
+ "15": {
+  "class_type": "ComfyMathExpression",
+  "inputs": {
+   "expression": "max(5, round(a * 24)) + (5 - (max(5, round(a * 24)) % 17)) % 17",
+   "values.a": [
+    "14",
+    0
+   ]
+  }
+ },
+ "16": {
+  "class_type": "MiniMaxH3ReferenceToVideo",
+  "inputs": {
+   "prompt": [
+    "11",
+    0
+   ],
+   "width": [
+    "13",
+    0
+   ],
+   "height": [
+    "13",
+    1
+   ],
+   "length": [
+    "15",
+    1
+   ],
+   "ref_image_size": "match",
+   "clip": [
+    "10",
+    0
+   ],
+   "vae": [
+    "17",
+    0
+   ],
+   "audio_vae": [
+    "18",
+    0
+   ],
+   "ref_images.ref_image_0": [
+    "12",
+    0
+   ]
+  }
+ },
+ "17": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "minimax_h3_video_vae_int8_convrot.safetensors"
+  }
+ },
+ "18": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+  }
+ },
+ "20": {
+  "class_type": "RandomNoise",
+  "inputs": {
+   "noise_seed": 0
+  }
+ },
+ "21": {
+  "class_type": "KSamplerSelect",
+  "inputs": {
+   "sampler_name": "res_multistep"
+  }
+ },
+ "22": {
+  "class_type": "BasicScheduler",
+  "inputs": {
+   "scheduler": "simple",
+   "steps": 20,
+   "denoise": 1.0,
+   "model": [
+    "6",
+    0
+   ]
+  }
+ },
+ "23": {
+  "class_type": "SamplerCustomAdvanced",
+  "inputs": {
+   "noise": [
+    "20",
+    0
+   ],
+   "guider": [
+    "8",
+    0
+   ],
+   "sampler": [
+    "21",
+    0
+   ],
+   "sigmas": [
+    "22",
+    0
+   ],
+   "latent_image": [
+    "16",
+    1
+   ]
+  }
+ },
+ "30": {
+  "class_type": "VAEDecode",
+  "inputs": {
+   "samples": [
+    "23",
+    0
+   ],
+   "vae": [
+    "17",
+    0
+   ]
+  }
+ },
+ "31": {
+  "class_type": "VAEDecodeAudio",
+  "inputs": {
+   "samples": [
+    "23",
+    0
+   ],
+   "vae": [
+    "18",
+    0
+   ]
+  }
+ },
+ "33": {
+  "class_type": "VHS_VideoCombine",
+  "inputs": {
+   "frame_rate": 24.0,
+   "loop_count": 0,
+   "filename_prefix": "H3_Quality",
+   "format": "video/h264-mp4",
+   "pingpong": false,
+   "save_output": true,
+   "pix_fmt": "yuv420p",
+   "crf": 12,
+   "save_metadata": true,
+   "trim_to_audio": false,
+   "images": [
+    "30",
+    0
+   ],
+   "audio": [
+    "31",
+    0
+   ]
+  }
+ }
+}
