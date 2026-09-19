@@ -1,3 +1,7 @@
+**中文** · [English](README.en.md)
+
+---
+
 # MiniMax H3 — 8 GB 显存工作流（三档）
 
 三档可直接运行的 ComfyUI 工作流，针对 **8 GB 显存的笔记本 GPU** 调过。
