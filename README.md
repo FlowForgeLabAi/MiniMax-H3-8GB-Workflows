@@ -1,190 +1,327 @@
-**中文** · [English](README.en.md)
+**English** · [中文说明](README.zh-CN.md)
 
 ---
 
-# MiniMax H3 — 8 GB 显存工作流（三档）
+# MiniMax H3 on an 8 GB Laptop — Six Measured Traps
 
-三档可直接运行的 ComfyUI 工作流，针对 **8 GB 显存的笔记本 GPU** 调过。
-每个参数的选择都有实测依据，出处见文末。
+> Hardware: **RTX 5060 Laptop 8 GB (sm_120) + 15.26 GiB RAM**, Windows 11 25H2,
+> ComfyUI 0.35.0 (a7b1d39), PyTorch 2.14.0+cu130, Python 3.13.12
+> Everything here is measured on that machine. Numbers that are *not* measured are labelled.
 
-| 文件 | 步数 | sampler | LoRA | TE-Speed | 10 秒成片实测 |
-|---|---|---|---|---|---|
-| `H3_Quality.json` | 20 | `res_multistep` | 无 | 关 | **33.8–43.5 分钟** |
-| **`H3_Balanced.json`** | **8** | `euler` | turbo @1.0 | 关 | **14.3 分钟** |
-| `H3_Fast.json` | 4 | `euler` | turbo @1.0 | 关 | 约 9 分钟 |
-
-**日常用 Balanced。** 同 seed 对比下，8 步和 20 步的构图基本一致，时间只有 1/2.5。
+This is not a "best settings" post. It's six things that cost me hours, each with a
+reproduction you can run, and each one something I got wrong before I got it right.
 
 ---
 
-## 预览
+## 1. A 10-second H3 video silently loses its subject at ~7 s — it's the prompt, not the model
 
-**Balanced（8 步）—— 推荐日常档**，五个时间点：推近 → 手部特写 → 切镜 → 侧脸
+**Symptom.** A 10 s / 20-step / 768×1024 I2VA generation looked great for ~6 s, then the
+character vanished and the last 3 seconds were empty scenery. Pushing in to a close-up
+earlier in the clip produced a **featureless skin patch where the face should be**.
 
-![H3_Balanced 预览](preview/H3_Balanced.png)
+**Root cause.** The prompt described only `[Shot 1]` — one shot, no timeline coverage —
+and gave a camera move with **no destination**:
 
-<sub>
-Quality（20 步）：[预览图](preview/H3_Quality.png) ·
-Fast（4 步）：[预览图](preview/H3_Fast.png)
-</sub>
+```
+❌ 镜头以小幅度、慢速度向前推进            (amplitude + speed, no target)
+✅ The camera pushes in with small amplitude at slow speed
+   toward her hand clutching the front of her sweater, and comes to rest at a medium shot.
+```
 
-> 示例底图是作者的私人图，**公开发布的工作流里 `LoadImage` 已改成 ComfyUI 自带的
-> `example.png`** —— 记得换成你自己的图。
+The official guide (`h3-prompt-writing/references/base-en.txt`) requires:
 
----
+- §4.3 — camera motion = **type + amplitude + speed**, and its examples embed a target
+  (`toward the folded letter in her hands`). Amplitude/speed alone give the model no stop
+  condition, so it keeps pushing until the subject leaves frame.
+- §4.2 — later shots need `[Shot N] At 00:0S.SSS, the camera cuts to ...`. With only
+  `[Shot 1]` and 10 seconds to fill, the model improvises the tail.
+- §3.1 — I2VA structure is **first-frame anchor → action onset → development → result or
+  reaction**. The original prompt stopped at "development".
 
-## 1. 你需要先准备这些模型
+Two more mistakes in the same sentence:
 
-放到 ComfyUI 对应的 `models/` 子目录下：
+- Writing 「保持…与**整体构图不变**」 while also asking for a push-in is **self-contradictory**.
+  The guide's wording is `preserving her appearance, clothing, seat position, and the
+  carriage layout` — **not** composition, which necessarily changes under a camera move.
+- Asking to push in on a face that the reference image deliberately hides behind hair
+  forces the model to invent detail it does not have.
 
-| 用途 | 文件名 | 放哪里 |
+**Fix and result.** Same seed, same 20 steps, same resolution, **only the prompt changed**:
+
+| | before | after |
 |---|---|---|
-| 主模型 | `minimax_h3_fl2va_pruned_int8_convrot.safetensors` | `models/diffusion_models/` |
-| 文本编码器 | `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors` | `models/text_encoders/` |
-| 视频 VAE | `minimax_h3_video_vae_int8_convrot.safetensors` | `models/vae/` |
-| 音频 VAE | `minimax_h3_audio_vae_fp32.safetensors` | `models/vae/` |
-| turbo LoRA | `minimax_h3_turbo_v4_step600_comfyui_T8-convert.safetensors` | `models/loras/` |
+| 7.0–10.0 s | ❌ subject gone | ✅ subject present the whole clip |
+| close-up face | ❌ blank skin | ✅ profile silhouette, hair still covering |
+| push-in | ❌ overshoots to extreme close-up | ✅ stops at medium shot |
+| cut at 6 s | — | ✅ lands where asked |
 
-> **量化格式说明**：主模型优先用 `int8_convrot`（需要 PyTorch cu130）；用不了再退 `fp8_scaled`。
-> 文本编码器的 `nvfp4_awq` **不需要 Blackwell 显卡**，而且比 `int8` 版本小 10.7 GiB ——
-> 对 16 GB 内存的机器这是关键差别。
->
-> **Quality 档不带 LoRA**，所以那份工作流不需要 LoRA 文件。
+Evidence: `evidence/old_vs_new.png`, `evidence/dense_grid.png` (before),
+`evidence/new_grid.png` (after). Videos: `H3_Quality_00001_.mp4` vs `H3_Quality_00002_.mp4`.
 
-### 必须装的自定义节点
+**Takeaway:** if an H3 clip degrades late or loses its subject, suspect prompt timeline
+coverage **before** touching steps, samplers or acceleration nodes. A 20-step official
+baseline reproduces the failure exactly.
 
-| 节点 | 来源 | 用途 |
+---
+
+## 2. On sm_120, the SageAttention patch is a pessimisation — and it disables backend selection
+
+**Measured on H3's real geometry** (heads=56, head_dim=128, S=8192, bf16):
+
+| backend | ms | rel L2 error |
 |---|---|---|
-| `MiniMaxLowVRAMAttention` / `MiniMaxChunkFeedForward` | ComfyUI 内置 | 降显存（源码级无损） |
-| `ModelAttentionBackend` | ComfyUI 内置 | 切到 comfy-kitchen 注意力后端 |
-| `VHS_VideoCombine` | **ComfyUI-VideoHelperSuite** | 输出视频（见下方说明） |
-| `MiniMaxH3SigmaShift` | ComfyUI 内置 | 显式控制 shift |
+| SDPA bf16 *(what you get with no flags)* | 143.1 | 0.0025 |
+| **comfy-kitchen INT8** | **22.8** | **0.0164** |
+| kitchen INT8 + `head_chunks=10` | 26.2 | 0.0164 |
+| **KJ SageAttention (sm89 kernel)** | **29.0** | **0.0387** |
+| sage + `head_chunks=10` | 31.6 | 0.0387 |
+
+comfy-kitchen is **6.3× faster than SDPA and 1.27× faster than sage, at 2.4× lower error.**
+
+Worse: `MiniMaxH3MemoryEfficientSageAttentionPatch` calls `_sageattn_int8_fp8_nhd`
+directly (`ltxv_nodes.py:2106`), **bypassing `optimized_attention`/`wrap_attn` entirely**.
+While that patch is in the graph, `ModelAttentionBackend` and `--use-ck-attention` have
+**no effect on H3's 50 blocks**.
+
+**Do this instead:** drop the sage patch, add
+`ModelAttentionBackend = "comfy kitchen attention"`.
+
+Also worth knowing: `MiniMaxLowVRAMAttention` and the sage patch do **not** conflict.
+The head-chunk setting lives in `transformer_options["minimax_head_chunks"]`
+(`minimax_nodes.py:188`) and `minimax_sageattn_forward` reads it (`ltxv_nodes.py:2102`),
+so both orders behave identically. `head_chunks=10` measured **bit-identical error** to
+unchunked, at +15% time.
+
+Backend name: the CLI flag is `--use-ck-attention` (not `--use-comfy-kitchen-attention`),
+and the six attention flags are in one `add_mutually_exclusive_group()`. comfy-kitchen's
+CUDA backend requires cu130+ (`comfy/quant_ops.py:22-28`).
 
 ---
 
-## 2. 启动参数
+## 3. `SaveVideo`'s H.264 re-encode fails on odd dimensions — use `VHS_VideoCombine`
+
+`SaveVideo` exposes a `crf` control, but reaching it through the API is non-obvious, and
+once you do, **it fails — whenever the video's width or height is odd**:
 
 ```
---disable-pinned-memory        ← 16 GB 内存机器【必须】
+av.error.ExternalError: [Errno 542398533] Generic error in an external library:
+    'avcodec_open2("libx264", {})'          <- fails with NO options at all
+    'avcodec_open2("libx264", {'crf': '12.0'})'
 ```
 
-**不要加**：
-- `--use-sage-attention` —— 在 sm_120 上比 kitchen 慢且误差大 2.4 倍，而且会让后端选择失效
-- `--use-flash-attention` —— sm_120 上不可用
-- `--fast` / `--fp16-unet` —— H3 的计算 dtype 是 bf16，没有 fp16，会出全黑帧
+**It is the dimensions, not a broken encoder.** `video_types.py` hands the frame's
+width/height to libx264 unchanged while setting `pix_fmt = "yuv420p"` — and `yuv420p`
+subsamples chroma 2x2, so **both dimensions must be even**. libx264 refuses to open with
+`EINVAL (22)`, and since PyAV opens the encoder lazily inside `encode()`, it surfaces as a
+generic external-library error with no hint about dimensions.
 
----
+Measured on the same PyAV (18.1.0) with no ComfyUI running: `64x64` and `1080x1920` open
+fine; `65x63`, `63x65`, `65x65`, `1171x2532`, `1080x1441` all fail. Our reference image is
+**1259 x 1672** — odd width. Reported upstream as
+[ComfyUI #16544](https://github.com/Comfy-Org/ComfyUI/issues/16544).
 
-## 3. 怎么用
+`format=auto` is not a workaround: it *"preserves a compatible source stream"*, so it
+cannot change quality at all.
 
-1. 把 json 拖进 ComfyUI 窗口
-2. **把 `LoadImage` 换成你自己的图**（默认指向 ComfyUI 自带的 `example.png`，只是个占位）
-3. **把提示词换成你自己的** —— 但**保持这个结构**：
+The API spelling for these nested combos is **dotted top-level keys**
+(`comfy_api/latest/_io.py: finalize_prefix` joins with `.`):
 
+```json
+"format": "mp4",
+"format.codec": "h264",
+"format.codec.encoding": "re-encode",
+"format.codec.encoding.crf": 12.0
 ```
-For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.
 
-integrated_multimodal_description: [Shot 1] …… The camera pushes in with small amplitude
-at slow speed toward <具体落点>, and comes to rest at a medium shot. …… [Shot 2] At 00:06.000,
-the camera cuts to ……
+Three spellings I tried first, and what each did — all silently useless or wrong:
 
-overall_soundscape: ……
-
-non_diegetic_music: ……
-```
-
-**三个最容易踩的坑（都实测过）：**
-
-| 坑 | 后果 |
+| spelling | result |
 |---|---|
-| 10 秒的片子只写 `[Shot 1]` | 后段没有内容可描述，**模型会自己填空景**，主体消失 |
-| 运镜只写幅度和速度、**没有落点** | 模型不知道推到哪停，**一路推过头把主体推出画面** |
-| 同时写「保持构图不变」和「推镜」 | **自相矛盾**，构图必然随运镜改变 |
+| flat `codec` / `encoding` / `crf` | **silently dropped** (`crf=None`); output byte-identical |
+| one dict nested inside `format` | validator dropped `format` → `TypeError: missing required argument: 'format'` |
+| dotted keys | ✅ parsed, reached `avcodec_open2` → **then libx264 failed to open** |
 
-4. 每次跑之前 **重启 ComfyUI**（见下方第 5 节）
-5. 运行
-
----
-
-## 4. 分辨率：不要动那个「百万像素」数字
-
-官方硬约束：**短边 ≤ 768、面积 ≤ 768×1344、32 的倍数**。
-
-`ResolutionSelector` 的「百万像素」是**陷阱** —— 同一个 MP 在不同比例下短边不同：
-
-| 比例 | 短边=768 时应填的 MP | 实际输出 |
-|---|---|---|
-| 1:1 | 0.5625 | 768×768 |
-| **3:4（默认）** | **0.75** | **768×1024** |
-| 4:3 | 0.75 | 1024×768 |
-| 9:16 | 0.959 | 768×1344 |
-| 16:9 | 0.959 | 1344×768 |
-| 2:3 | 0.844 | 768×1152 |
-
-**填 1.0 MP 配 3:4 会得到 896×1184 —— 短边 896 超出训练区间，画质反而更差。**
-
-> 9:16 的 768×1344（0.984 MP）是**合法上限**，但在 16 GB 内存的机器上实测会掉进换页
-> （GPU 功耗从 80 W 掉到平线 34 W）。内存够大再试。
-
----
-
-## 5. ⚠️ 每次运行前必须重启 ComfyUI
-
-这是**收益最大的单条建议**，远超任何节点级优化：
-
-| ComfyUI 会话状态 | 每 block | 10 秒成片 |
-|---|---|---|
-| **刚重启** | **0.9–6 秒** | **34–44 分钟** |
-| 连续运行约 1.7 小时后 | **212 秒** | **约 12 小时** |
-
-**怎么判断自己在掉速**：看 `nvidia-smi` 的**功耗**。
-
-- 正常采样：**64–98 W**
-- 在换页：**平线 34–36 W**，而利用率仍显示 99%（那个计数器把搬运内存的核也算进去）
-
-**循环采样功耗，一旦变平线就停 —— 别等。**
-
----
-
-## 6. 关于输出节点为什么用 `VHS_VideoCombine` 而不是 `SaveVideo`
-
-`SaveVideo` 有 `crf` 控件，但在这套环境里**它的重编码通道是坏的**：
+**Fix:** `VHS_VideoCombine` (VideoHelperSuite) shells out to the ffmpeg executable instead
+of PyAV. Its `crf` works — same 48-frame input:
 
 ```
-avcodec_open2("libx264", {})   ← 连【空参数】都失败
+crf=12  ->  570,872 bytes
+crf=19  ->  287,454 bytes
+crf=40  ->   40,296 bytes
 ```
 
-PyAV 自带的 libx264 打不开，所以 `SaveVideo` 唯一能用的模式是 `format=auto`，
-而它的语义是「保留上游流、不重编码」——**改不了画质**，实测码率被压在 2067 kb/s。
+It also accepts `IMAGE` + `AUDIO` directly, so `CreateVideo` can be deleted.
+Note its `pix_fmt` / `crf` / `save_metadata` / `trim_to_audio` inputs are **not listed in
+`/object_info`** (they hang off the `format` combo), so a UI→API converter will drop them.
 
-`VHS_VideoCombine` 调用外部 ffmpeg 可执行文件，**crf 实测可用**：
-
-| 输出节点 | 同一条片子的码率 |
-|---|---|
-| `SaveVideo`（auto） | 2067 kb/s |
-| **`VHS_VideoCombine`（crf=12）** | **10393 kb/s（×5.0）** |
-
-crf 越小画质越高、文件越大。**12 ≈ 视觉无损**；想让文件小一点，改到 18–20 也够用
-（同一段测试输入：crf=12 → 570 KB，crf=19 → 287 KB，crf=40 → 40 KB）。
+Probe: `scripts/probe_encoder.py` — it runs in **seconds** because it never loads a model
+(just `LoadImage → RepeatImageBatch → save`). Highly recommended pattern for poking at
+output nodes.
 
 ---
 
-## 7. 已知限制
+## 4. The turbo LoRA only applies 80.3% to the pruned base
 
-- **只在 RTX 5060 Laptop 8 GB (sm_120) + 15.26 GiB 内存上实测过。**
-  **4060 用户请自己重测注意力后端** —— 它是 sm_89，FlashAttention 可用，
-  不能假设 comfy-kitchen 在那上面也最优。
-- 测过的时长只有 5 秒和 10 秒。官方训练区间约 124–362 帧。
-- 三档**都不使用 TE-Speed** —— 实测它只值 18%，而代价是闭源不可审计的有损项。
-- 这些工作流不是「最优解」，是**有证据支撑的合理起点**。
+LoRA modules counted: **259 total — 208 apply (80.3%), 51 do not (19.7%)**.
+All 51 are `adaln_proj.linear`, and the shapes explain it:
+
+```
+base (pruned)  adaln_proj input dim = 8
+LoRA (unpruned) adaln_proj input dim = 2688
+```
+
+The LoRA metadata says so itself:
+`incompatible_base: MiniMax-H3 pruned_* (AdaLN input is 8, LoRA input is 2688)`.
+
+AdaLN is the timestep-modulation path, which is exactly what a **step-distilled** LoRA
+needs to modify. So the distillation is only partially applied.
+
+The error spam this produces —
+`ERROR lora diffusion_model.blocks.N.adaln_proj.linear.weight shape '[96768, 8]' is invalid
+for input of size 260112384`, 50× per step — is not a "progress indicator". It is 50
+per-layer failures per step. It doesn't abort the run, which is why it's easy to dismiss.
+
+Reproduce: `scripts/lora_applicability.py`.
 
 ---
 
-## 8. 依据出处
+## 5. The binding constraint is 16 GB of RAM, not 8 GB of VRAM
 
-每条参数选择背后都有实测，完整证据、脚本和原始数据在：
+| ComfyUI session | per block | 10 s clip |
+|---|---|---|
+| **freshly restarted** | **0.9–6 s** | **34–44 min** |
+| after ~1.7 h of continuous sessions | **212 s** | **~12 h** |
 
-**https://github.com/FlowForgeLabAi/-h3-8gb-traps**
+Same settings. The tell is **GPU power**: healthy sampling draws **64–98 W**; when the
+machine is thrashing it sits at a **flat 34–36 W** at 99% "utilisation", because the
+utilisation counter counts memory-shuffling kernels too. I used that as a stop signal.
 
-包含：kitchen vs sage vs SDPA 的注意力对照、LoRA 80.3% 应用率的逐 key 比对、
-输出节点探针（不加载模型，秒级出结果）、14 次运行的 33 字段 CSV。
+Supporting measurements:
+
+- Output resolution is *not* the lever: one 12 GB-card test shrank the workload 40× for
+  **0.5%** less peak VRAM and 1.0% less system RAM.
+- Capacity is set by **resolution × duration**, not steps: on a 4060 8 GB, 1024×576/243f
+  completes at 20 steps (2762.89 s) while 1344×768/**362f** CUDA-OOMs at 1 step.
+- Official limits: **short side 768**, area ≤ 768×1344, multiples of 32. At 3:4 the ceiling
+  is 768×1024 = 0.786 MP; at 9:16 it's 768×1344 = 0.984 MP. Note the `ResolutionSelector`
+  megapixel dial is a trap — the same MP value gives different short sides per aspect ratio
+  (1.0 MP at 3:4 yields 896×1184, short side 896, **outside the trained range**).
+- Attempting 9:16 (768×1344, +31% pixels) on this 16 GB machine pushed it straight into
+  thrashing (flat 34 W) even though it had run fine at 3:4 minutes earlier. **+31% pixels
+  was over the line.**
+
+Related: `--disable-pinned-memory` is **required** on 16 GB machines —
+`MAX_PINNED_MEMORY = ram * 0.90` otherwise gets the process killed.
+
+**How to tell you are thrashing, in one number.** `nvidia-smi` power draw. Healthy
+sampling on this machine sits at **64–98 W**; thrashing sits at a **flat 34–36 W while
+`utilization.gpu` still reads 99%**, because that counter counts memory-shuffling kernels
+too. Sample it in a loop and stop the run if it goes flat — that was the signal that ended
+the 9:16 attempt five minutes in instead of hours later.
+
+---
+
+## 6. 8 steps vs 20 steps: the composition barely changes, the time halves
+
+Same seed, same prompt, same 768×1024, both following the fixed prompt from §1:
+
+| | 20 steps | 8 steps |
+|---|---|---|
+| camera plan | push-in → cut at 6 s → shoulder/neck | **identical** |
+| subject present 0–10 s | ✅ | ✅ |
+| knit-texture detail in close-ups | slightly more | slightly softer |
+| wall clock (10 s clip) | **33.8–43.5 min** | **14.3 min** |
+| bitrate | 2067 kb/s (SaveVideo auto) | 10393 kb/s (VHS crf=12) |
+
+**8 steps costs 1/2.5 of the time for what is, at normal viewing size, the same shot.**
+
+Caveat, stated plainly: the two runs used *different encoders*, and the 8-step one had
+**5× the bitrate** while still looking marginally softer. That is weak evidence that the
+extra steps buy a little genuine detail rather than just surviving compression better.
+
+Comparison sheet: `evidence/steps_8_vs_20.png`. Still images are the author's own; the
+clips are in `videos/`.
+
+**Practical read:** 8 steps is a sensible daily driver at 10 s / 768×1024 on this hardware,
+with 20 steps reserved for final renders.
+
+---
+
+## Timing model (only valid at 5 s / 768×1024 / kitchen / LoRA 1.0)
+
+```
+T_wall ≈ 102 + 34.1 × steps        residual ≤ 3.2% over 4/6/8/20 steps
+```
+
+Measured: 4 steps 245.3 s · 6 steps 297.4 s · 8 steps 377.9 s · 20 steps 785.3 s.
+
+**Do not extrapolate this to longer clips.** At 10 s the per-step cost is ~95 s, not the
+~57 s the 5 s slope predicts — I got this wrong and predicted 28.7 min for a run that
+actually took 38–43.5 min. At 10 s / 20 steps, four runs measured:
+**2613, 2283, 2560, 2029 s → 33.8–43.5 min, ±11%.**
+
+Useful consequence at 5 s: **20 steps / 4 steps = 3.20×, not 5×** — a ~102 s fixed
+overhead is 42% of a 4-step run and only 13% of a 20-step one.
+
+---
+
+## Repo layout
+
+```
+scripts/
+  probe_encoder.py        # seconds-fast SaveVideo vs VHS crf probe (no model loading)
+  lora_applicability.py   # per-key LoRA vs pruned-base shape comparison
+  attention_probe.py      # SDPA / kitchen / sage timing + error on H3 geometry
+  build_workflow.py       # generate a ComfyUI workflow from a declarative node list
+  benchmark_loop.py       # restart -> submit -> sample peaks -> parse phases -> CSV
+workflows/
+  H3_Quality.json  20 steps, no LoRA, res_multistep   (official baseline)
+  H3_Balanced.json  8 steps, turbo LoRA @1.0, euler
+  H3_Fast.json      4 steps, turbo LoRA @1.0, euler
+evidence/
+  results.csv       # 14 runs × 33 fields (peak VRAM/RAM, phase timings, crash flags)
+  old_vs_new.png    # the prompt fix, same seed, same timestamps
+  dense_grid.png    # subject dropout at 7.0 s
+  steps_8_vs_20.png # 8 steps vs 20 steps
+  encoder_isolation.png  # same frames re-encoded at two bitrates
+videos/
+  01-...mp4         # before the prompt fix: subject drops at ~7 s
+  02-...mp4         # after the prompt fix, 20 steps
+  03-...mp4         # after the prompt fix, 8 steps, VHS crf=12 (with audio)
+docs/
+  publish-notes.md      # repo description / topics / release notes / share text
+  working-report-cn.md  # raw working notes (contains retracted conclusions)
+```
+
+## Honest status
+
+**Verified:** everything in sections 1–5 has a reproduction above, and 1, 3, 4 were
+confirmed with byte-level or same-seed single-variable comparisons.
+
+**Not verified / open:**
+
+- **RTX 4060 Laptop (sm_89) is now measured** (2026-09): at 4 steps / 5 s / 768x1024,
+  pytorch attention 403.8 s, comfy-kitchen 270.1 s, sage 263.0 s.
+  **kitchen beats pytorch by 1.5x on the 4060 too**, so the recommendation does not
+  need to be split by architecture. Still unmeasured there: 8-step and 20-step timings.
+  That machine's commit limit was only 22.14 GB (29% below this one), so A1's absolute
+  value may be partly polluted by pagefile growth.
+- **No claim that the included workflows are optimal.** They are a reasonable,
+  evidence-aligned starting point.
+- The 8-vs-20 comparison in §6 is confounded by the encoder difference and rests on a
+  single seed. A clean test needs both at the same encoder and several seeds.
+- `ref_image_size` has a `max` setting that the node's own tooltip says gives "best identity
+  fidelity" at "several times slower". **Untested here.**
+- The 9:16 route (768×1344) was abandoned for memory reasons, not because it is wrong —
+  with a larger pagefile it may well be the better resolution.
+- Long clips: everything measured was 5 s or 10 s. The official trained range is ~124–362
+  frames and nothing here probes beyond 243.
+- This session contained several of my own retracted conclusions (Sol-Attn "lossless",
+  a mis-attributed TE-Speed quote, three wrong CRF "verifications", one wrong timing
+  extrapolation, one wrong crash diagnosis). Treat anything not explicitly labelled
+  *measured* as suspect.
+
+## License
+
+MIT for the scripts. The workflow JSONs are generated artifacts; no model files are
+included or redistributed.
