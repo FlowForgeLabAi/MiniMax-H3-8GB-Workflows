@@ -156,15 +156,26 @@ This is the **single highest-value habit**, worth far more than any node-level t
 
 ## 6. Why the output node is `VHS_VideoCombine` and not `SaveVideo`
 
-`SaveVideo` has a `crf` control, but **its re-encode path is broken in this stack**:
+`SaveVideo` has a `crf` control, but **its re-encode path fails whenever the video's width
+or height is odd**:
 
 ```
 avcodec_open2("libx264", {})   <- fails with NO options at all
 ```
 
-PyAV's bundled libx264 cannot open, so the only working mode is `format=auto`, whose
-meaning is "preserve the source stream" — **it cannot change quality**, and the bitrate
-was pinned at 2067 kb/s.
+**It is the dimensions, not a broken encoder.** `video_types.py` hands the frame's
+width/height to libx264 unchanged while setting `pix_fmt = "yuv420p"` — and `yuv420p`
+subsamples chroma 2x2, so **both dimensions must be even**. libx264 returns `EINVAL (22)`,
+and since PyAV opens the encoder lazily inside `encode()`, it surfaces as a generic
+external-library error with no hint about dimensions.
+
+Measured on the same PyAV (18.1.0) with no ComfyUI running: `64x64` and `1080x1920` open
+fine; `65x63`, `63x65`, `65x65`, `1171x2532`, `1080x1441` all fail. Our reference image is
+**1259 x 1672** — odd width. Reported upstream as
+[ComfyUI #16544](https://github.com/Comfy-Org/ComfyUI/issues/16544).
+
+`format=auto` is not a workaround: it "preserves the source stream", so **it cannot change
+quality**, and the bitrate was pinned at 2067 kb/s.
 
 `VHS_VideoCombine` shells out to the ffmpeg executable instead, and **its `crf` works**:
 
@@ -180,9 +191,10 @@ want smaller files (same test input: crf=12 → 570 KB, crf=19 → 287 KB, crf=4
 
 ## 7. Known limitations
 
-- **Measured only on an RTX 5060 Laptop 8 GB (sm_120) + 15.26 GiB RAM.**
-  **4060 users must re-test the attention backend** — it is sm_89, FlashAttention is
-  available there, and you should not assume comfy-kitchen also wins.
+- **Also measured on an RTX 4060 Laptop (sm_89)** (2026-09): at 4 steps / 5 s / 768x1024,
+  pytorch attention 403.8 s, **comfy-kitchen 270.1 s**, sage 263.0 s.
+  **kitchen beats pytorch by 1.5x on the 4060 too**, so this workflow's backend choice
+  does not need to change per architecture. Still unmeasured there: 8-step and 20-step.
 - Only 5 s and 10 s clips were measured. The official trained range is ~124–362 frames.
 - **None of the three tiers uses TE-Speed** — it measured at only 18% saving, at the cost
   of a closed-source, unauditable lossy component.
