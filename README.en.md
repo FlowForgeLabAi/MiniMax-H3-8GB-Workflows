@@ -152,6 +152,8 @@ This is the **single highest-value habit**, worth far more than any node-level t
 
 **Sample it in a loop and stop when it goes flat — do not wait it out.**
 
+**A tool for this now exists.** The "sample it in a loop and stop when it goes flat" procedure above is packaged as a ComfyUI panel — [ComfyUI-GPU-Stall-Meter](https://github.com/FlowForgeLabAi/ComfyUI-GPU-Stall-Meter) — which reads board power, SM clock and free host RAM, self-calibrates an `idle / ok / stalled` verdict, and can optionally interrupt a run once the verdict has held (off by default). The manual loop above remains valid without it.
+
 ---
 
 ## 6. Why the output node is `VHS_VideoCombine` and not `SaveVideo`
