@@ -143,6 +143,10 @@ non_diegetic_music: ……
 - 在换页：**平线 34–36 W**，而利用率仍显示 99%（那个计数器把搬运内存的核也算进去）
 
 **循环采样功耗，一旦变平线就停 —— 别等。**
+**这一步现在有工具了。** 上面那个「循环采样功耗、变平线就停」的手工流程，已经做成了一个
+ComfyUI 面板：[ComfyUI-GPU-Stall-Meter](https://github.com/FlowForgeLabAi/ComfyUI-GPU-Stall-Meter)
+—— 直接读板载功耗、SM 时钟和可用内存，自校准判定 `idle / ok / stalled`，可选在判定持续
+成立时中断运行（默认关）。不装也完全不影响，上面手工采样的做法依然有效。
 
 ---
 
