@@ -1,4 +1,4 @@
-**中文** · [English](README.en.md)
+<img width="1274" height="797" alt="image" src="https://github.com/user-attachments/assets/89a9153e-bb44-49ee-a923-8c3c8acf0e50" />**中文** · [English](README.en.md)
 
 ---
 
@@ -194,6 +194,11 @@ crf 越小画质越高、文件越大。**12 ≈ 视觉无损**；想让文件�
 - 这些工作流不是「最优解」，是**有证据支撑的合理起点**。
 
 ---
+## 生态缺口清单（2026-10）
+
+扫了一遍 H3 相关仓库的 issue：57 条积压、41 条零回复，按装不上 / LoRA 与 adaLn 行数不一致 / 显存与性能分类，附统计口径。中文 [ecosystem-gaps.zh.md](ecosystem-gaps.zh.md) · English [ecosystem-gaps.md](ecosystem-gaps.md)
+
+
 
 ## 8. 依据出处
 
@@ -202,4 +207,4 @@ crf 越小画质越高、文件越大。**12 ≈ 视觉无损**；想让文件�
 **https://github.com/FlowForgeLabAi/-h3-8gb-traps**
 
 包含：kitchen vs sage vs SDPA 的注意力对照、LoRA 80.3% 应用率的逐 key 比对、
-输出节点探针（不加载模型，秒级出结果）、14 次运行的 33 字段 CSV。
+输出节点探针（不加载模型，秒级出结果）、18 次运行的 33 字段 CSV。
