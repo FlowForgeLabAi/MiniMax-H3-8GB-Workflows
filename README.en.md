@@ -204,6 +204,10 @@ want smaller files (same test input: crf=12 → 570 KB, crf=19 → 287 KB, crf=4
 
 ---
 
+## Ecosystem gap report (2026-10)
+
+Scanned the H3-related repos: 57 issues untouched for 30+ days, 41 with zero replies, grouped into install/runtime, LoRA-adaLn row mismatch, and VRAM/performance, with the counting method. English [ecosystem-gaps.md](ecosystem-gaps.md) · 中文 [ecosystem-gaps.zh.md](ecosystem-gaps.zh.md)
+
 ## 8. Where the evidence lives
 
 Every parameter choice above has a measurement behind it. Scripts, raw data and
@@ -213,4 +217,4 @@ comparison images:
 
 That repo contains the kitchen-vs-sage-vs-SDPA attention comparison, the per-key LoRA
 applicability analysis (80.3%), a seconds-fast output-node probe that never loads a model,
-and a 14-run × 33-field CSV.
+and a 18-run × 33-field CSV.
