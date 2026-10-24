@@ -1,4 +1,4 @@
-<img width="1274" height="797" alt="image" src="https://github.com/user-attachments/assets/89a9153e-bb44-49ee-a923-8c3c8acf0e50" />**中文** · [English](README.en.md)
+**中文** · [English](README.en.md)
 
 ---
 
